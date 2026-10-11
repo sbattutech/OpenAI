@@ -1,154 +1,233 @@
+
 import os
 import streamlit as st
-from dotenv import load_dotenv
-from openai import OpenAI
+from groq import Groq
 
-load_dotenv()
-
+# --------------------------------------------------
+# Page configuration
+# --------------------------------------------------
 st.set_page_config(
-    page_title="Ask AI",
-    page_icon="✨",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="My AI Chatbot",
+    page_icon="🤖",
+    layout="centered"
 )
 
-# ---------- Styling ----------
-st.markdown("""
-<style>
-    .stApp { background: linear-gradient(135deg, #f7f9fc 0%, #eef3fb 100%); }
-    [data-testid="stHeader"] { background: rgba(0,0,0,0); }
-    .hero {
-        padding: 1.5rem 1.7rem;
-        border-radius: 22px;
-        background: linear-gradient(120deg, #172554 0%, #4338ca 58%, #7c3aed 100%);
-        color: white;
-        margin-bottom: 1.25rem;
-        box-shadow: 0 12px 30px rgba(49, 46, 129, .16);
-    }
-    .hero h1 { margin: 0; font-size: 2rem; letter-spacing: -.03em; }
-    .hero p { margin: .45rem 0 0 0; color: #e0e7ff; font-size: 1rem; }
-    .mini-card {
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 1rem;
-        background: rgba(255,255,255,.88);
-        min-height: 105px;
-    }
-    .mini-card strong { color: #312e81; }
-    div[data-testid="stChatMessage"] {
-        background: rgba(255,255,255,.84);
-        border: 1px solid #e8edf5;
-        border-radius: 16px;
-        padding: .85rem 1rem;
-        box-shadow: 0 3px 12px rgba(15,23,42,.035);
-    }
-    .footer { text-align: center; color: #64748b; font-size: .8rem; padding: 1rem 0; }
-</style>
-""", unsafe_allow_html=True)
+MODEL_NAME = "openai/gpt-oss-120b"
 
-# ---------- Sidebar ----------
+# --------------------------------------------------
+# Custom CSS: Highlight the chat input box
+# --------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* Highlight the chat text box */
+    div[data-testid="stChatInput"] {
+        border: 2px solid #4F8BF9 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 0 10px rgba(79, 139, 249, 0.30);
+        background-color: #F5F9FF !important;
+        padding: 3px;
+    }
+
+    div[data-testid="stChatInput"]:focus-within {
+        border: 2px solid #1769FF !important;
+        box-shadow: 0 0 14px rgba(23, 105, 255, 0.45);
+    }
+
+    div[data-testid="stChatInput"] textarea {
+        color: #172033 !important;
+        font-size: 16px !important;
+    }
+
+    /* Header styling */
+    .main-title {
+        text-align: center;
+        font-size: 32px;
+        font-weight: bold;
+        margin-bottom: 6px;
+    }
+
+    .subtitle {
+        text-align: center;
+        color: #777777;
+        margin-bottom: 24px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --------------------------------------------------
+# Read Groq API key securely
+# Priority: Streamlit Secrets, then environment variable
+# --------------------------------------------------
+api_key = None
+
+try:
+    api_key = st.secrets.get("GROQ_API_KEY")
+except Exception:
+    pass
+
+api_key = api_key or os.environ.get("GROQ_API_KEY")
+
+# --------------------------------------------------
+# Header
+# --------------------------------------------------
+st.markdown(
+    '<div class="main-title">🤖 My AI Chatbot</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<div class="subtitle">Ask anything and get an AI-powered answer.</div>',
+    unsafe_allow_html=True
+)
+
+# --------------------------------------------------
+# Sidebar
+# --------------------------------------------------
 with st.sidebar:
-    st.markdown("## ✨ Ask AI")
-    st.caption("A simple, friendly AI assistant for your team.")
-    st.divider()
+    st.header("⚙️ Settings")
 
-    api_key = st.text_input(
-        "OpenAI API key",
-        value=os.getenv("OPENAI_API_KEY", ""),
-        type="password",
-        help="For local use, set OPENAI_API_KEY in your .env file. For deployment, use Streamlit Secrets.",
+    st.write("**AI Provider:** Groq")
+    st.write(f"**Model:** `{MODEL_NAME}`")
+
+    temperature = st.slider(
+        "Creativity",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.7,
+        step=0.1,
+        help="Lower values give more focused answers."
     )
-    model = st.selectbox(
-        "Model",
-        options=["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
-        index=0,
-        help="Choose a model available to your OpenAI API account.",
+
+    max_tokens = st.select_slider(
+        "Response length",
+        options=[250, 500, 1000, 2000],
+        value=1000
     )
-    temperature = st.slider("Creativity", min_value=0.0, max_value=1.0, value=0.5, step=0.1)
-    answer_style = st.selectbox(
-        "Answer style",
-        ["Balanced", "Concise", "Detailed", "Explain for beginners"],
-        index=0,
-    )
-    st.divider()
-    if st.button("🗑️ Clear conversation", use_container_width=True):
+
+    if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
-    st.caption("Your API key is used by this app to call OpenAI. Never share it publicly.")
 
+    st.divider()
+    st.caption("Powered by Groq")
+
+# --------------------------------------------------
+# Check API key without displaying it
+# --------------------------------------------------
+if not api_key:
+    st.warning("The chatbot is not configured yet.")
+
+    st.markdown(
+        """
+        To enable the chatbot, add your Groq API key
+        to Streamlit Secrets or set the `GROQ_API_KEY`
+        environment variable.
+
+        The API key is kept out of the webpage.
+        """
+    )
+
+    st.stop()
+
+# Initialize Groq client
+try:
+    client = Groq(api_key=api_key)
+except Exception:
+    st.error("Unable to initialize the AI client. Check your configuration.")
+    st.stop()
+
+# --------------------------------------------------
+# Initialize chat history
+# --------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ---------- Main page ----------
-st.markdown("""
-<div class="hero">
-  <h1>What can I help you with?</h1>
-  <p>Ask a question, explore an idea, or get help with your work — in plain language.</p>
-</div>
-""", unsafe_allow_html=True)
-
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.markdown('<div class="mini-card">💡 <strong>Learn something</strong><br><span>Get clear explanations of complex topics.</span></div>', unsafe_allow_html=True)
-with c2:
-    st.markdown('<div class="mini-card">✍️ <strong>Write & improve</strong><br><span>Draft emails, summaries, and useful content.</span></div>', unsafe_allow_html=True)
-with c3:
-    st.markdown('<div class="mini-card">🧩 <strong>Solve a problem</strong><br><span>Brainstorm options and work through questions.</span></div>', unsafe_allow_html=True)
-
-st.markdown("### Conversation")
-
+# --------------------------------------------------
+# Display previous messages
+# --------------------------------------------------
 for message in st.session_state.messages:
-    with st.chat_message(message["role"], avatar="🧑‍💻" if message["role"] == "user" else "✨"):
+    with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-prompt = st.chat_input("Type your question here…")
+# --------------------------------------------------
+# Chat input
+# --------------------------------------------------
+prompt = st.chat_input("✨ Type your question here...")
 
 if prompt:
-    if not api_key.strip():
-        st.error("Add your OpenAI API key in the sidebar, or configure OPENAI_API_KEY in your .env / Streamlit Secrets.")
-        st.stop()
-
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="🧑‍💻"):
-        st.markdown(prompt)
-
-    style_instructions = {
-        "Balanced": "Give a clear, helpful answer with enough detail to be useful.",
-        "Concise": "Be concise and lead with the answer. Use bullets when helpful.",
-        "Detailed": "Give a thorough, well-structured answer with examples where useful.",
-        "Explain for beginners": "Explain in beginner-friendly language, define jargon, and use a simple example.",
-    }[answer_style]
-
-    instructions = (
-        "You are a helpful, professional AI assistant. "
-        + style_instructions
-        + " If the request is ambiguous, ask a focused clarifying question. "
-        "Use headings and bullet points when they improve readability."
+    # Save and display the user's message
+    st.session_state.messages.append(
+        {"role": "user", "content": prompt}
     )
 
-    try:
-        client = OpenAI(api_key=api_key.strip())
-        # Responses API accepts conversation turns as role/content input items.
-        conversation_input = [
-            {"role": item["role"], "content": item["content"]}
-            for item in st.session_state.messages
-        ]
-        with st.chat_message("assistant", avatar="✨"):
-            with st.spinner("Thinking…"):
-                response = client.responses.create(
-                    model=model,
-                    instructions=instructions,
-                    input=conversation_input,
-                    temperature=temperature,
-                )
-                answer = response.output_text or "I couldn't generate a text response. Please try again."
-            st.markdown(answer)
-            st.caption(f"Powered by OpenAI · {model}")
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-    except Exception as exc:
-        # Avoid printing credentials or environment variables in the UI.
-        st.error("The request could not be completed. Check your API key, model access, and network connection, then try again.")
-        with st.expander("Technical details"):
-            st.code(f"{type(exc).__name__}: {exc}")
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-st.markdown('<div class="footer">Please verify important information before relying on it. Do not enter passwords or sensitive personal data.</div>', unsafe_allow_html=True)
+    # Prepare conversation history
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful AI assistant. "
+                "Give clear, accurate, friendly answers "
+                "in simple language when appropriate."
+            )
+        }
+    ]
+
+    messages.extend(st.session_state.messages)
+
+    # Generate response using Groq
+    with st.chat_message("assistant"):
+        try:
+            with st.spinner("Thinking..."):
+                response = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+
+                answer = response.choices[0].message.content
+
+                if not answer:
+                    answer = "The AI returned an empty response."
+
+            st.markdown(answer)
+
+            st.session_state.messages.append(
+                {"role": "assistant", "content": answer}
+            )
+
+        except Exception as error:
+            error_text = str(error).lower()
+
+            if "429" in error_text or "rate_limit" in error_text:
+                st.error(
+                    "Groq rate limit reached. Please wait and try again."
+                )
+            elif (
+                "401" in error_text
+                or "authentication" in error_text
+                or "invalid_api_key" in error_text
+            ):
+                st.error(
+                    "Groq authentication failed. "
+                    "Check the API key in your server settings."
+                )
+            elif (
+                "insufficient_quota" in error_text
+                or "billing" in error_text
+            ):
+                st.error(
+                    "The API account may have insufficient quota. "
+                    "Check your Groq account limits."
+                )
+            else:
+                st.error(
+                    "Unable to get a response. "
+                    "Please try again later."
+                )
